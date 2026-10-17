@@ -1,5 +1,3 @@
-# Rep: builds an installable Android APK in the cloud (GitHub Actions).
-# Put this file at .github/workflows/build-apk.yml and keep rep-app.html in the repo root.
 name: Build Rep APK
 on:
   workflow_dispatch:
