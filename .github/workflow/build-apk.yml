@@ -1,0 +1,137 @@
+# Rep: builds an installable Android APK in the cloud (GitHub Actions).
+# Put this file at .github/workflows/build-apk.yml and keep rep-app.html in the repo root.
+name: Build Rep APK
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+permissions:
+  contents: write
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - name: Create Android project
+        run: |
+          mkdir -p www
+          cp rep-app.html www/index.html
+          cat > package.json <<'EOF'
+          {
+            "name": "rep",
+            "version": "1.0.0",
+            "private": true,
+            "dependencies": {
+              "@capacitor/android": "^6.2.0",
+              "@capacitor/cli": "^6.2.0",
+              "@capacitor/core": "^6.2.0",
+              "@capacitor/filesystem": "^6.0.0",
+              "@capacitor/share": "^6.0.0"
+            }
+          }
+          EOF
+          cat > capacitor.config.json <<'EOF'
+          {"appId":"com.rep.app","appName":"Rep","webDir":"www","server":{"androidScheme":"https"},"backgroundColor":"#0C0908"}
+          EOF
+          npm install
+          npx cap add android
+      - name: Icons, signing key and version
+        run: |
+          pip install pillow
+          cat > make_icons.py <<'EOF'
+          import glob,os
+          from PIL import Image,ImageDraw
+          BG='#6B1428';TAN='#C79A6D';CUR='#EAE3DD'
+          R=["11110","10001","10001","11110","10100","10010","10001"]
+          def draw(S,transparent=False,circle=False):
+              im=Image.new('RGBA',(S,S),(0,0,0,0) if transparent else BG)
+              d=ImageDraw.Draw(im);c=S*36/512;o=(S-7*c)/2
+              for r,row in enumerate(R):
+                  for q,ch in enumerate(row):
+                      if ch=='1':d.rectangle([o+q*c,o+r*c,o+(q+1)*c-1,o+(r+1)*c-1],fill=TAN)
+              d.rectangle([o+6*c,o+5*c,o+7*c-1,o+7*c-1],fill=CUR)
+              if circle:
+                  m=Image.new('L',(S,S),0);ImageDraw.Draw(m).ellipse([0,0,S-1,S-1],fill=255);im.putalpha(m)
+              return im
+          res=os.environ.get('RES','android/app/src/main/res')
+          for n,l,f in [('mdpi',48,108),('hdpi',72,162),('xhdpi',96,216),('xxhdpi',144,324),('xxxhdpi',192,432)]:
+              d=res+'/mipmap-'+n;os.makedirs(d,exist_ok=True)
+              draw(l).save(d+'/ic_launcher.png');draw(l,circle=True).save(d+'/ic_launcher_round.png');draw(f,transparent=True).save(d+'/ic_launcher_foreground.png')
+          os.makedirs(res+'/mipmap-anydpi-v26',exist_ok=True);os.makedirs(res+'/values',exist_ok=True)
+          x='<?xml version="1.0" encoding="utf-8"?>\n<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android"><background android:drawable="@color/rep_icon_bg"/><foreground android:drawable="@mipmap/ic_launcher_foreground"/></adaptive-icon>\n'
+          for n in ('ic_launcher','ic_launcher_round'):open(res+'/mipmap-anydpi-v26/'+n+'.xml','w').write(x)
+          open(res+'/values/rep_icon_bg.xml','w').write('<?xml version="1.0" encoding="utf-8"?>\n<resources><color name="rep_icon_bg">#6B1428</color></resources>\n')
+          for p in glob.glob(res+'/**/splash.png',recursive=True):
+              im=Image.open(p);Image.new('RGB',im.size,BG).save(p)
+          EOF
+          python3 make_icons.py
+          mkdir -p ~/.android
+          base64 -d > ~/.android/debug.keystore <<'EOF'
+          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
+          EOF
+          sed -i "s/versionCode [0-9][0-9]*/versionCode ${GITHUB_RUN_NUMBER}/" android/app/build.gradle
+          sed -i "s/versionName \"[^\"]*\"/versionName \"1.0.${GITHUB_RUN_NUMBER}\"/" android/app/build.gradle
+          npx cap sync android
+      - name: Build APK
+        working-directory: android
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon
+      - name: Name the APK
+        run: cp android/app/build/outputs/apk/debug/app-debug.apk Rep.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Rep-APK
+          path: Rep.apk
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: Rep build ${{ github.run_number }}
+          body: Download Rep.apk below and install it on your Android phone.
+          files: Rep.apk
