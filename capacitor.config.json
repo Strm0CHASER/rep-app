@@ -1,0 +1,9 @@
+{
+  "appId": "com.rep.app",
+  "appName": "Rep",
+  "webDir": "www",
+  "server": {
+    "androidScheme": "https"
+  },
+  "backgroundColor": "#0C0908"
+}
